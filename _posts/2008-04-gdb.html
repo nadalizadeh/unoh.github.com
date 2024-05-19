@@ -1,0 +1,337 @@
+---
+layout: post
+permalink: /2008/04/gdb.html
+title: "gdbの使い方"
+date: 2008-04-04T19:22:50.00+09:00
+tags:
+  - "kubo"
+categories:
+  - "Tips"
+---
+今年の2月にマカーになったbokkoです。どうも僕の使っているフォントがほかの人には見づらいらしく、「そのフォントはねぇよw」と言われたり、外付けのキーボードを使っているせいか、「MacBookの意味なし!」と社内で言われてたりしています。<br />
+<br />
+今日はgdbのお話です。gdbは非常に広く使われているデバッガで、特にC、C++のプログラムをデバッグするのによく使われています。<br />
+<br />
+<h3> デバッガの使い方</h3><br />
+<br />
+プログラムをデバッグする際、例えば以下の方法が挙げられます。<br />
+<br />
+1. ソースコードを読む<br />
+2. ソースコードに出力関数を仕込む(例えばprintf)<br />
+3. ソースコードを書き換えて実行してみる<br />
+<br />
+これで十分な場合もありますが、そうでない場合もあります。これらの方法ではプログラムを実行している最中にこちらからソースコードレベルでのアクションを起こすことが難しいので、例えば、プログラムをある時点で止めて変数の内容を確認するといったことが困難です。2と3でもできないことはないですが、CやC++だと何か別のことをやろうとする度にコンパイルし直す必要があります。そこでデバッガの出番です。デバッガを使えばプログラムを1行ずつ実行しながら変数の内容を確認したり、あるループ内の処理がどう実行されてどのようにそのループを抜けたのか確認するのがやりやすくなります。<br />
+<br />
+<br />
+<h3>プログラムにデバッグ情報を持たせる</h3><br />
+<br />
+例えば、以下のように(ものすごく単純に)配列をランダムにソートするCのプログラムがあるとします。<br />
+<br />
+<pre class="code">
+/* random_sort.c */
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+#define COUNT(arr) (sizeof(arr)/sizeof(arr[0]))
+void random_sort(int arr[], int n);
+void random_sort(int arr[], int n){
+  int i, rnd, temp;
+  srand(time(NULL));
+  for(i=0;i&lt;n;i++){
+    rnd = rand() % n;
+    temp = arr[i];
+    arr[i] = arr[rnd];
+    arr[rnd] = temp;
+  }
+}
+int main(int argc, char *argv[]){
+  int i, n;
+  int nums[] = {1, 2, 3, 4, 5};
+  n = COUNT(nums);
+  random_sort(nums, n);
+  for(i=0;i&lt;n;i++){
+    printf(&quot;%d &quot;, nums[i]);
+  }
+  printf(&quot;\n&quot;);
+  return 0;
+}
+<br />
+</pre><br />
+<br />
+このプログラムをgccでコンパイルしてgdbで実行するためには例えば、<br />
+<br />
+<pre class="code">
+$ gcc -g random_sort.c -o random_sort
+</pre><br />
+<br />
+とします。-gはプログラムにデバッグ情報を含ませるためのオプションです。(実際にはCでプログラムを書く際は警告を見逃さないように、もっとオプションを付け足したりするのですが、ここでは割愛します)。作成した実行プログラムをgdbに引数で渡してやります。<br />
+<br />
+<pre class="code">$ gdb ./random_sort                         7165 (c/tips/random_sort)
+GNU gdb 6.3.50-20050815 (Apple version gdb-768) (Tue Oct  2 04:07:49 UTC 2007)
+Copyright 2004 Free Software Foundation, Inc.
+GDB is free software, covered by the GNU General Public License, and you are
+welcome to change it and/or distribute copies of it under certain conditions.
+Type &quot;show copying&quot; to see the conditions.
+There is absolutely no warranty for GDB.  Type &quot;show warranty&quot; for details.
+This GDB was configured as &quot;i386-apple-darwin&quot;...Reading symbols for shared libraries ... done
+(gdb)</pre><br />
+<br />
+これでgdbを使う準備ができました。次はよく使うコマンドについて解説します。<br />
+<br />
+<h3> プログラムを実行する</h3><br />
+<br />
+プログラムを実行するにはrunコマンドを使います。<br />
+<br />
+<pre class="code">(gdb) run
+Starting program: /Users/bokkko/programming/c/tips/random_sort/random_sort
+Reading symbols for shared libraries ++. done
+4 3 2 5 1
+Program exited normally.
+(gdb)
+</pre><br />
+<br />
+ただ単にrunコマンドを実行してもプログラムが正常、もしくは異常終了したり、ユーザからの入力待ちになったりするだけなので、この後は自分が挙動を調べたい関数にブレークポイントを設定したりします。<br />
+<br />
+<h3>ブレークポイントを設定する</h3><br />
+<br />
+ブレークポイントを設定するにはbreakコマンドを使います。<br />
+<br />
+<pre class="code">(gdb) break random_sort
+Breakpoint 1 at 0x1ef0: file random_sort.c, line 13.
+(gdb)
+</pre><br />
+<br />
+関数だけでなく、行単位で設定することもできます。<br />
+<br />
+<pre class="code">(gdb) b 15
+Breakpoint 1 at 0x1f04: file random_sort.c, line 15.
+(gdb) r
+Starting program: /Users/bokkko/programming/c/tips/random_sort/random_sort
+Reading symbols for shared libraries ++. done
+Breakpoint 1, random_sort (arr=0xbfffed24, n=5) at random_sort.c:15
+15        for(i=0;i&lt;n;i++){
+(gdb)</pre><br />
+<br />
+<h3>プログラムを1行ずつ実行する</h3><br />
+<br />
+プログラムを1行ずつ実行するにはnextコマンドを使います。<br />
+<br />
+<pre class="code">(gdb) b main
+Breakpoint 1 at 0x1f77: file random_sort.c, line 26.
+(gdb) r
+Starting program: /Users/bokkko/programming/c/tips/random_sort/random_sort
+Reading symbols for shared libraries ++. done
+Breakpoint 1, main (argc=1, argv=0xbfffed74) at random_sort.c:26
+26        int nums[] = {1, 2, 3, 4, 5};
+(gdb) next
+27        n = COUNT(nums);
+(gdb) next
+28        random_sort(nums, n);
+(gdb) next
+30        for(i=0;&lt;n;i++){
+(gdb)</pre><br />
+<br />
+<h3>ソースコードを表示する</h3><br />
+<br />
+listコマンドを使うと一部のソースコードを表示することができます。<br />
+引数なしで実行した場合、現在の行の前後合わせて10行を表示します。<br />
+<br />
+<pre class="code">
+(gdb) b main
+Breakpoint 1 at 0x1f77: file random_sort.c, line 26.
+(gdb) r
+Starting program: /Users/bokkko/programming/c/tips/random_sort/random_sort
+Reading symbols for shared libraries ++. done
+Breakpoint 1, main (argc=1, argv=0xbfffed74) at random_sort.c:26
+26        int nums[] = {1, 2, 3, 4, 5};
+(gdb) l
+21      }
+22
+23      int main(int argc, char *argv[]){
+24       
+25        int i, n;
+26        int nums[] = {1, 2, 3, 4, 5};
+27        n = COUNT(nums);
+28        random_sort(nums, n);
+29
+30        for(i=0;i&lt;n;i++){
+(gdb)
+</pre><br />
+<br />
+引数には関数や行番号を指定することもできます。<br />
+<br />
+<h3>変数の内容を表示する</h3><br />
+<br />
+変数の内容を表示するにはprintコマンドを使います。<br />
+<br />
+<pre class="code">(gdb) print i
+$5 = 0
+(gdb)</pre><br />
+<br />
+また、単に変数を表示するだけでなく、計算もできます。<br />
+<br />
+<pre class="code">(gdb) pirnt i + 10
+$5 = 10
+(gdb)</pre><br />
+<br />
+配列の中身も以下のように表示できます。<br />
+<br />
+<pre class="code">(gdb) print nums
+$1 = {1, 2, 3, 4, 5}
+(gdb)</pre><br />
+<br />
+上記のソースコードにはありませんが、構造体の内容を表示することもできます。例えば、以下のような構造体とソースコードがあった場合、<br />
+<br />
+<pre class="code">typedef struct list {
+  struct list *next;
+  int data;
+} List;</pre><br />
+<br />
+<pre class="code">       ・
+       ・
+       ・
+  List *l;
+  l = (List *)malloc(sizeof(List));
+  l->next = NULL;
+  l->data = (int)NULL;
+> return l;
+       ・
+       ・
+       ・
+</pre><br />
+<br />
+<pre class="code">//>で↓を実行
+(gdb) p *l
+  $1 = {
+  next = 0x0,
+  data = 0
+}
+(gdb)</pre><br />
+<br />
+pはprintのエイリアスです。gdbでは長かったり、よく使うコマンドにはエイリアスが用意されています。<br />
+<br />
+また、環境によっては構造体の内容が上記のように改行されず、1行で表示されてしまっているかもしれません。この場合、ホームディレクトリに.gdbinitというファイルを作成して、<br />
+<br />
+<pre class="code">
+set print pretty on
+</pre><br />
+<br />
+と記述すれば幸せになれるかもしれません。ただ、構造体のメンバの数が多い場合、画面からはみ出ししまうことがあります。上記の設定はgdbを実行している途中で切り替えることもできるので、状況にあった表示を選択するといいでしょう。<br />
+<br />
+<pre class="code">
+(gdb) set print pretty off
+(gdb) p *l
+$1 = {next = 0x0, data = 0}
+(gdb) set print pretty on
+(gdb) p *l
+$2 = {
+  next = 0x0,
+  data = 0
+}
+(gdb) 
+</pre><br />
+<br />
+<h3>バックトレースを表示する</h3><br />
+<br />
+自分が今、プログラムのどの関数を実行しているのか知りたい場合、backtraceコマンドを使います。以下はステップ実行してrandom_sort関数に入ってbacktraceを実行した様子です。<br />
+<br />
+<pre class="code">(gdb) backtrace
+#0  random_sort (arr=0xbfffed24, n=5) at random_sort.c:15
+#1  0x00001fb3 in main (argc=1, argv=0xbfffed74) at random_sort.c:28
+(gdb)</pre><br />
+<br />
+このように自分が実行している関数がどこから呼び出されているのかもわかります。<br />
+<br />
+<h3>変数の内容を監視する</h3><br />
+<br />
+変数の内容を表示するには先述したprintコマンドが使えますが、nextコマンドなどでプログラムをステップ実行しながら毎回指定した変数の内容を表示するにはdisplayコマンドを使います。<br />
+<br />
+以下はforループ内でrand関数で生成した数値を監視している様子です。<br />
+<br />
+<pre class="code">(gdb) b random_sort
+Breakpoint 1 at 0x1ef0: file random_sort.c, line 13.
+(gdb) r
+Starting program: /Users/bokkko/programming/c/tips/random_sort/random_sort
+Reading symbols for shared libraries ++. done
+Breakpoint 1, random_sort (arr=0xbfffed24, n=5) at random_sort.c:13
+13        srand(time(NULL));
+(gdb) display rnd
+1: rnd = 0
+(gdb) n
+15        for(i=0;i&lt;n;i++){
+1: rnd = 0
+(gdb)
+16          rnd = rand() % n;
+1: rnd = 0
+(gdb)
+17          temp = arr[i];
+1: rnd = 4
+(gdb)
+18          arr[i] = arr[rnd];
+1: rnd = 4
+(gdb)
+19          arr[rnd] = temp;
+1: rnd = 4
+(gdb)
+15        for(i=0;i&lt;n;i++){
+1: rnd = 4
+(gdb)
+16          rnd = rand() % n;
+1: rnd = 4
+(gdb)
+17          temp = arr[i];
+1: rnd = 2
+(gdb)</pre><br />
+<br />
+このように変数の内容がどこでどう変更されたかがわかります。nはnextコマンドのエイリアスで、プログラムの次の行を実行します。<br />
+<br />
+<h3>Emacs上でgdbを使う</h3><br />
+<br />
+<br />
+gdbはコマンドラインで使っていると不便に思うことがあります。例えば、実際のコードのどこが実行されているかわかりにくいですし、listコマンドは使う度に頭の中でコンテキストスイッチをしているようなもので、あまりいいものではありません。なので僕は普段、gdbはEmacs上で使っています。Emacs上でgdbを起動するにはM-x gdbを実行します。実行している様子は以下のような感じです。<br />
+<br />
+<img alt="gdb.png" src="/files/download/gdb.png" width="550" height="344" /><br />
+<br />
+<br />
+このようにlistコマンドを使うことなく、ソースコードを見ながらデバッグできます。Visual StudioやEclipseのデバッグ機能を利用したことがある人はこっちの方がなじみやすいかもしれません。プログラム書く時はvi(m)だけど、「gdb使う時はEmacs上で」という人もいるそうです。<br />
+<br />
+<h3>参考文献</h3><br />
+<br />
+<div class="amazlet-box" style="margin-bottom:0px;"><div class="amazlet-image" style="float:left;"><a href="http://www.amazon.co.jp/exec/obidos/ASIN/475613016X/unoh-22/ref=nosim/" name="amazletlink" target="_blank"><img src="http://ecx.images-amazon.com/images/I/21TSY3KCTJL.jpg" alt="GDBデバッギング入門" style="border: none;" /></a></div><div class="amazlet-info" style="float:left;margin-left:15px;line-height:120%"><div class="amazlet-name" style="margin-bottom:10px;line-height:120%"><a href="http://www.amazon.co.jp/exec/obidos/ASIN/475613016X/unoh-22/ref=nosim/" name="amazletlink" target="_blank">GDBデバッギング入門</a><div class="amazlet-powered-date" style="font-size:7pt;margin-top:5px;font-family:verdana;line-height:120%">posted with <a href="http://www.amazlet.com/browse/ASIN/475613016X/unoh-22/ref=nosim/" title="GDBデバッギング入門" target="_blank">amazlet</a> at 08.04.04</div></div><div class="amazlet-detail">リチャード ストールマン ローランド ペシュ <br />アスキー <br />売り上げランキング: 42902<br /></div><div class="amazlet-review" style="margin-top:10px; margin-bottom:10px"><div class="amazlet-review-average" style="margin-bottom:5px">おすすめ度の平均: <img src="http://images-jp.amazon.com/images/G/09/x-locale/common/customer-reviews/stars-4-0.gif" alt="4.0" /></div><img src="http://images-jp.amazon.com/images/G/09/x-locale/common/customer-reviews/stars-5-0.gif" alt="5" /> Debugging with GDB<br /><img src="http://images-jp.amazon.com/images/G/09/x-locale/common/customer-reviews/stars-3-0.gif" alt="3" /> 入門書ではありません<br /></div><div class="amazlet-link" style="margin-top: 5px"><a href="http://www.amazon.co.jp/exec/obidos/ASIN/475613016X/unoh-22/ref=nosim/" name="amazletlink" target="_blank">Amazon.co.jp で詳細を見る</a></div></div><div class="amazlet-footer" style="clear: left"></div></div><br />
+<br />
+<br />
+<div class="amazlet-box" style="margin-bottom:0px;"><div class="amazlet-image" style="float:left;"><a href="http://www.amazon.co.jp/exec/obidos/ASIN/487311246X/unoh-22/ref=nosim/" name="amazletlink" target="_blank"><img src="http://ecx.images-amazon.com/images/I/31WWRYDQ1YL.jpg" alt="GDBハンドブック" style="border: none;" /></a></div><div class="amazlet-info" style="float:left;margin-left:15px;line-height:120%"><div class="amazlet-name" style="margin-bottom:10px;line-height:120%"><a href="http://www.amazon.co.jp/exec/obidos/ASIN/487311246X/unoh-22/ref=nosim/" name="amazletlink" target="_blank">GDBハンドブック</a><div class="amazlet-powered-date" style="font-size:7pt;margin-top:5px;font-family:verdana;line-height:120%">posted with <a href="http://www.amazlet.com/browse/ASIN/487311246X/unoh-22/ref=nosim/" title="GDBハンドブック" target="_blank">amazlet</a> at 08.04.04</div></div><div class="amazlet-detail">アーノルド ロビンス <br />オライリージャパン <br />売り上げランキング: 55079<br /></div><div class="amazlet-review" style="margin-top:10px; margin-bottom:10px"><div class="amazlet-review-average" style="margin-bottom:5px">おすすめ度の平均: <img src="http://images-jp.amazon.com/images/G/09/x-locale/common/customer-reviews/stars-4-0.gif" alt="4.0" /></div><img src="http://images-jp.amazon.com/images/G/09/x-locale/common/customer-reviews/stars-5-0.gif" alt="5" /> 単なるリファレンスとして使うもの<br /><img src="http://images-jp.amazon.com/images/G/09/x-locale/common/customer-reviews/stars-3-0.gif" alt="3" /> 開発慣れしてる人でGDB忘れた人．お勧めです<br /></div><div class="amazlet-link" style="margin-top: 5px"><a href="http://www.amazon.co.jp/exec/obidos/ASIN/487311246X/unoh-22/ref=nosim/" name="amazletlink" target="_blank">Amazon.co.jp で詳細を見る</a></div></div><div class="amazlet-footer" style="clear: left"></div></div><br />
+<br />
+<br />
+<br />
+<br />
+<br />
+追記:(2008/04/07)<br />
+<br />
+<br />
+上記の配列をランダムに並び替えるプログラムですが、ある方から上記のコードでは均等にランダムにならない、とのご指摘を頂きました。均等にランダムになるには関数random_sortの↓の部分を、<br />
+<br />
+<pre class="code">
+  for(i=0;i&lt;n;i++){                                                                            
+    rnd = rand() % n;                                                                          
+    temp = arr[i];                                                                             
+    arr[i] = arr[rnd];                                                                         
+    arr[rnd] = temp;                                                                           
+  }                                                                                            
+</pre><br />
+<br />
+↓のようにするのが正しいです。すみませんでした。<br />
+<br />
+<pre class="code">
+  for(i=0;i&lt;n-1;i++){
+    rnd = rand() % (n - i) + i;
+    temp = arr[i];
+    arr[i] = arr[rnd];
+    arr[rnd] = temp;
+  }
+</pre><br />
+<br />
+また、修正にあたり、<a href="http://www.hyuki.com/d/200510.html#i20051020190000">こちら</a>を参考にさせて頂きました。<br />
+<br />
+<br />
+この場を借りて御二方に感謝します。ありがとうございました。

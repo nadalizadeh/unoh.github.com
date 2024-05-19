@@ -1,0 +1,124 @@
+---
+layout: post
+permalink: /2007/08/introducing_javascript_jquery.html
+title: "JavaScriptライブラリといえば jQuery（入門編）"
+date: 2007-08-28T20:58:44.00+09:00
+tags:
+  - "hide"
+categories:
+  - "Tips"
+---
+こんにちわ。山下です。<br />
+<br />
+最近、私の周りではJavaScriptライブラリといえば、<a href="http://jquery.com/">jQuery</a> の名前がまず最初に挙がってくるようになってきました。今回は、jQueryって何が便利なの？っていう人向けに、ポイントを掻い摘んで説明します。<br />
+<br />
+<h3>1.名前空間を汚さない</h3><br />
+<br />
+他のJavaScriptライブラリとかだとStringとかArrayを直接拡張してたりしますが、jQueryはグローバルな名前空間を汚しません。eachとかmapのような便利な関数もすべてjQueryオブジェクトの属性として定義されています。<br />
+<br />
+<blockquote>jQuery.each, jQuery.extend, jQuery.grep, jQuery.map, jQuery.merge, jQuery.trim, etc.</blockquote><br />
+<br />
+また、標準では $ にショートカットが割り当てられるのですが、jQuery.noConflict()と書くことで prototype.js などと混ぜて使えます。<br />
+<br />
+<pre class="code">
+&lt;script src="prototype.js"&gt;&lt;/script&gt;
+&lt;script src="jquery.js"&gt;&lt;/script&gt;
+&lt;script type="text/javascript"&gt;
+    jQuery.noConflict();
+&lt;/script&gt;
+</pre><br />
+<br />
+<br />
+<h3>2.要素の選択がらくらく</h3><br />
+<br />
+これが私がjQueryを一番気に入っている理由なのですが、CSS 3と XPath をミックスしたような構文で要素を選択することができます。すべてのjQueryでの操作は、DOMからひとつまたは複数のノードを選択することから始まります。以下に要素選択の例を挙げますが、かなり直感的に理解できるのではないでしょうか。<br />
+<br />
+<pre class="code">
+jQuery('div.panel')
+    class="panel"なすべてのdiv要素
+jQuery('p#intro')
+    id="intro"なすべての段落
+jQuery('div#content a:visible')
+    id="content"のdivの中のすべてのvisibleなリンク
+jQuery('input[@name=email]')
+    name="email"なすべてのinput要素
+jQuery('table.orders tr:odd')
+    class="orders"な奇数行
+jQuery('a[@href^="http://"]')
+    すべての外部リンク（http://で始まる） 
+jQuery('p[a]')
+　　1つ以上のリンクを含む段落
+</pre><br />
+<br />
+<br />
+<h3>3.メソッド・チェーン</h3><br />
+<br />
+2.で説明した要素の選択は、すべてjQueryオブジェクトが返ってきます。そして、そのオブジェクトのメソッドを実行した結果もjQueryオブジェクトが返ってきます。これはどういうことかというと、複数のメソッドを呼び出す必要がある時に何度もセレクタを書くことなく、シンプルに書けるということです。<br />
+<br />
+例えば、id="message"の要素の背景色を赤に変更して、内容を'Hello!'に書き換えて表示するなんてことが下の1行で書けます。<br />
+<br />
+<pre class="code">jQuery('#message').css('background', 'red').html('Hello!').show();</pre><br />
+<br />
+<br />
+<h3>4.イベント処理</h3><br />
+<br />
+click関数に引数を渡した場合はクリックされた際にその処理を行い、指定しなかった場合はクリックをシミュレートします。<br />
+<br />
+<pre class="code">
+jQuery('p').click(function() {
+   jQuery(this).css('background-color', 'red');
+});
+    pタグをクリックしたら、背景を赤に変更
+jQuery('p:first').click()
+    最初の段落をクリックした動作を行う
+</pre><br />
+<br />
+<br />
+次の例では、aタグにmouseoverとmouseoutのイベントを割り当てます。マウスカーソルが重なると背景色をオレンジに変更し、離れると白に変更します。hover()の最初の引数がmouseoverで2番目がmouseoutになります。<br />
+<br />
+<pre class="code">
+jQuery('a').hover(function() {
+    jQuery(this).css('background-color', 'orange');
+}, function() {
+    jQuery(this).css('background-color', 'white');
+});
+</pre><br />
+<br />
+<br />
+one()関数は、1度だけ実行するイベントを割り当てます。最初に段落をクリックするとalertメッセージが表示されますが、もう一度クリックしても何も起こりません。<br />
+<br />
+<pre class="code">
+jQuery('p').one('click', function() { alert(jQuery(this).html()); });
+</pre><br />
+<br />
+<br />
+<h3>5.Ajax</h3><br />
+<br />
+AjaxでHTMLの断片をサーバからGETして、divのinnerHTMLに流し込むのは、たったの1行で書けます。これだけです。<br />
+<br />
+<pre class="code">
+jQuery('div#intro').load('/some/fragment.html');
+</pre><br />
+<br />
+JSONデータもこんな感じで取得して自動的に変数に格納されるので、とても簡単です。<br />
+<br />
+<pre class="code">
+jQuery.getJSON('/some.json', function(json) {
+    alert('JSON rocks: ' + json.foo + ' ' + json.bar);
+});
+</pre><br />
+<br />
+<br />
+<h3>6.プラグイン</h3><br />
+<br />
+jQuery自体は21KBしかないのですが、プラグインを使うことでjQueryのインスタンスオブジェクトに機能を追加することができます。<a href="http://jquery.com/plugins/">jQuery Plugins</a>のページに、世界のユーザが作成した100以上の便利なプラグインが用意されているので、これを利用することができます。<br />
+<br />
+私が以前書いたエントリ、<br />
+　<a href="/2007/05/jquery-and-plugins.html">簡単Ajaxライブラリ「jQuery」と便利なプラグインたち</a><br />
+も参考にして頂ければと思います。<br />
+<br />
+<br />
+<hr size="1" /><br />
+<br />
+<p>以上、jQuery入門編と題して特徴を説明しましたが、もし興味を持ってくれる人がいれば次回はもう少し掘り下げていきたいと思います。</p><br />
+<br />

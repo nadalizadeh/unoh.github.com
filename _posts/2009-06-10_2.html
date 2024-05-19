@@ -1,0 +1,434 @@
+---
+layout: post
+permalink: /2009/06/10_2.html
+title: "10テラバイトマシンのつくりかた"
+date: 2009-06-26T15:26:48.00+09:00
+tags:
+  - "kubo"
+categories:
+  - "Linux"
+---
+<br />
+「iPodの残り容量が200MBを切った」と社内で発言してから「iPhoneを買おう！」としきりに言われるようになったbokkoです。そんな私は先月、ホコリをかぶっていたデスクトップPCを筐体ごと買い換えました。今ではMacBookからSSHでログインしてターミナル上で快適な生活を送っています。<br />
+<br />
+今月、2TBのHDDを6本使ったサーバを立てる機会がありまして、今日はその時のお話です。<br />
+<br />
+<h3>HDDの容量とストレージサーバ</h3><br />
+<br />
+Webサービスのインフラを構築・運営していると、膨大なデータをどう扱うかといった問題にぶち当たることがあります。仮想化技術の進歩によって複数のOSを1台のマシンで同時に稼働させつつ、物理的なマシンの数を減らすことができるようにはなりましたが、<br />
+<br />
+物理的な媒体であるHDDを1台のマシンに搭載できる数には限りがあり、ソフトウェアであるOSの仮想化みたいにじゃんじゃん増やすことができません。<br />
+<br />
+なので、できる限り容量の大きいディスクを使いたいところです。しかし、RAIDを構築して冗長化したりするとかになるとディスクが余分に必要になるので、マシン1台あたりの最大容量が大幅に減ることになります。<br />
+<br />
+普通のマシンのマザーボードだとSATAの口が数個しかありませんから、かなり厳しくなります。こういう場合、高価ですが、信頼性が高く、たくさんのディスクを扱うことのできるストレージ製品を使うという選択肢があります。この手の製品には大量のHDDを十数本並べてもパーティションがあたかも1個しかないように見えたりするものがあります。<br />
+<br />
+パーティションが1個がしかないことによる利点はそのパーティションに割り当てられた容量を越えない限り、データは単純にそのパーティション内に放り込んでいくだけで、データを参照する際にデータはどこにあるのかなんてほとんど気にしなくて済むことです。<br />
+<br />
+さらに、通常のマシンと違って、マザーボードにSATAの口が4～6本しかないなんてこともなく、大量のディスクを使うことができるので、RAID5やRAID6(およびホットスペア)のようにデータの保存とは別にディスクを大量に使う冗長化構成でも十分なディスク領域が確保できます。<br />
+<br />
+ただ、当然ながらこの選択は初期の金銭的なコストが高くなります。これ以外の方法だと、例えば(テラバイト級の)膨大なデータを扱う場合にはストレージサーバをたくさん並べて、どのファイルがどのサーバのどの場所にあるのかといったメタデータを保存しておいて、<br />
+<br />
+データを参照する際はそのメタデータを元にデータのありかを探すようにし、「実際にはストレージはたくさんあるんだけど、1個しかないように見せる」所謂、分散ストレージ的なシステムを構築するという方法があります。<br />
+<br />
+こちらは初期の金銭的なコストは安くなりますが、さきほど述べた仕組みを(何らかのミドルウェア、例えばMogileFS等を使うにしろおそらくは)自前で構築することになるので、事前にちゃんと設計しないとかえって高くつくことになります。<br />
+<br />
+<br />
+で、フォト蔵はというと現在はPHPやMySQL、自作のApacheモジュールを駆使して、データを複数のサーバ上のディスクに分散させて読み書きする仕組みを構築しています。<br />
+最近はようやくストレージサーバの追加も比較的楽にできるようになりました。あと、新しい仕組みを構築する上で久しぶりに仕事でC言語を使いました。<br />
+<br />
+<br />
+ただ、時と場合によっては非常に大きなディスク領域を1つのパーティションとして扱いたい場面もあるかと思います。でも、普通のマシンでできるだけ簡単にやりたい。そういう時のためにLVMがあります。<br />
+<br />
+<br />
+前置きが長くなりました。では、LVMと2TBのHDD6本を使って10テラバイトなマシンを作ったときの様子を紹介します。ただし、写真はありません。<br />
+<br />
+<h3>LVM</h3><br />
+<br />
+LVMはLogic Volume Managnerの略で、複数のHDDを1つの論理的なディスク領域(パーティション)として扱ったり、グループ化することができるディスク管理ユーティリティの総称です。<br />
+LVMを使うと複数のHDDを使って巨大なディスク領域を持つ1つのパーティションを作成したり、ディスク容量が足りなくなっても新しいHDDを追加していくつかのユーティリティコマンドを走らせるだけでディスク領域を拡張することができます。<br />
+最近のLinuxディストリビューションにはAnacondaをはじめとする便利なインストーラやGUIアプリケーションがあり、インストール時にパーティションの作成からフォーマットはもちろん、LVMの設定もグラフィカルに行うことができますが、ここでは敢えてコマンドラインでやります。<br />
+<br />
+<h3>LVMの構成要素</h3><br />
+<br />
+LVMを使う前にLVMの重要な3つの構成要素について軽く紹介します。<br />
+<br />
+<ul><br />
+<li>Phisical Volume(以下、PV)</li><br />
+<li>Volume Group(以下、VG)</li><br />
+<li>Logical Volume(以下、LV)</li><br />
+</ul><br />
+<br />
+PVは物理的なディスク領域(パーティション)を指し、この物理的なディスク領域をまとめたものがVG(ボリュームグループ)です。また、LVはこのVG内に作成され、実際にユーザが使う論理的なディスク領域(パーティション)になります。このへんは言葉で説明するよりも実際にやってみた方がわかりやすいので、とりえあえず、実際にLVMを使ってみましょう。<br />
+<br />
+<h3>LVMパーティションを作成する</h3><br />
+<br />
+ディスクに対してLVMのユーティリティを実行するには、事前に各ディスク上にLVMパーティションを作成する必要があります。なので、まずfdiskを使って各ディスク上にLVMパーティションを作成します。各ディスクのパーティションは以下の通りです。<br />
+<br />
+<pre class="code">
+# fdisk -l /dev/sda
+Disk /dev/sda: 2000.3 GB, 2000398934016 bytes
+255 heads, 63 sectors/track, 243201 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+ 
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sda1   *           1          13      104391   83  Linux
+/dev/sda2              14        6387    51199155   83  Linux
+/dev/sda3            6388        6518     1052257+  82  Linux swap / Solaris
+# fdisk -l /dev/sdb
+Disk /dev/sdb: 2000.3 GB, 2000398934016 bytes
+255 heads, 63 sectors/track, 243201 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+ 
+   Device Boot      Start         End      Blocks   Id  System
+# fdisk -l /dev/sdc
+Disk /dev/sdc: 2000.3 GB, 2000398934016 bytes
+255 heads, 63 sectors/track, 243201 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+ 
+   Device Boot      Start         End      Blocks   Id  System
+# fdisk -l /dev/sdd
+Disk /dev/sdd: 2000.3 GB, 2000398934016 bytes
+255 heads, 63 sectors/track, 243201 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+ 
+   Device Boot      Start         End      Blocks   Id  System
+# fdisk -l /dev/sde
+Disk /dev/sde: 2000.3 GB, 2000398934016 bytes
+255 heads, 63 sectors/track, 243201 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+ 
+   Device Boot      Start         End      Blocks   Id  System
+# fdisk -l /dev/sdf
+Disk /dev/sdf: 2000.3 GB, 2000398934016 bytes
+255 heads, 63 sectors/track, 243201 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+ 
+   Device Boot      Start         End      Blocks   Id  System
+#
+</pre><br />
+<br />
+/dev/sdaにはブートやルート、およびスワップパーティションが存在しますが、残りのディスクは基本的に同じです。まず、以下のように/dev/sda上にLVMパーティションを作成します。<br />
+<br />
+<pre class="code">
+# fdisk /dev/sda
+The number of cylinders for this disk is set to 243201.
+There is nothing wrong with that, but this is larger than 1024,
+and could in certain setups cause problems with:
+1) software that runs at boot time (e.g., old versions of LILO)
+2) booting and partitioning software from other OSs
+   (e.g., DOS FDISK, OS/2 FDISK)
+ 
+Command (m for help): n
+Command action
+  e   extended
+  p   primary partition (1-4)
+p
+Selected partition 4
+First cylinder (6519-243201, default 6519):
+Using default value 6519
+Last cylinder or +size or +sizeM or +sizeK (6519-243201, default 243201):
+Using default value 243201
+ 
+Command (m for help): t
+Partition number (1-4): 4
+Hex code (type L to list codes): 8e
+Changed system type of partition 4 to 8e (Linux LVM)
+ 
+Command (m for help): p
+ 
+Disk /dev/sda: 2000.3 GB, 2000398934016 bytes
+255 heads, 63 sectors/track, 243201 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+ 
+ 
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sda1   *           1          13      104391   83  Linux
+/dev/sda2              14        6387    51199155   83  Linux
+/dev/sda3            6388        6518     1052257+  82  Linux swap / Solaris
+/dev/sda4            6519      243201  1901156197+  8e  Linux LVM
+ 
+Command (m for help): w
+The partition table has been altered!
+ 
+Calling ioctl() to re-read partition table.
+ 
+WARNING: Re-reading the partition table failed with error 16: Device or resource busy.
+The kernel still uses the old table.
+The new table will be used at the next reboot.
+Syncing disks
+#
+</pre><br />
+<br />
+続いて/dev/sdb上にLVMパーティションを作成します。<br />
+<br />
+<pre class="code">
+# fdisk /dev/sdb
+The number of cylinders for this disk is set to 243201.
+There is nothing wrong with that, but this is larger than 1024,
+and could in certain setups cause problems with:
+1) software that runs at boot time (e.g., old versions of LILO)
+2) booting and partitioning software from other OSs
+   (e.g., DOS FDISK, OS/2 FDISK)
+ 
+Command (m for help): n
+Command action
+   e   extended
+   p   primary partition (1-4)
+p
+Partition number (1-4): 1
+First cylinder (1-243201, default 1):
+Using default value 1
+Last cylinder or +size or +sizeM or +sizeK (1-243201, default 243201):
+Using default value 243201
+ 
+Command (m for help): p
+ 
+Disk /dev/sdb: 2000.3 GB, 2000398934016 bytes
+255 heads, 63 sectors/track, 243201 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+ 
+    Device Boot      Start         End      Blocks   Id  System
+/dev/sdb1               1      243201  1953512001   83  Linux
+ 
+Command (m for help): t
+Selected partition 1
+Hex code (type L to list codes): 8e
+Changed system type of partition 1 to 8e (Linux LVM)
+ 
+Command (m for help): p
+ 
+Disk /dev/sdb: 2000.3 GB, 2000398934016 bytes
+255 heads, 63 sectors/track, 243201 cylinders
+Units = cylinders of 16065 * 512 = 8225280 bytes
+ 
+   Device Boot      Start         End      Blocks   Id  System
+/dev/sdb1               1      243201  1953512001   8e  Linux LVM
+ 
+Command (m for help): w
+The partition table has been altered!
+ 
+Calling ioctl() to re-read partition table.
+Syncing disks.
+#
+</pre><br />
+<br />
+ほかのディスクでも同じようにLVMパーティションを作成していきます。<br />
+<br />
+<pre class="code">
+# fdisk /dev/sdc
+(略)
+# fdisk /dev/sdd
+(略)
+# fdisk /dev/sde
+(略)
+# fdisk /dev/sdf
+(略)
+#
+</pre><br />
+<br />
+全部のデバイスでLVMパーティションを作成し終わったら実行結果を反映させるため、再起動します。ちなみにfdiskは2TB以下のディスク領域しか扱うことができないので、将来に備えてpartedのことを勉強しておくのもいいかもしれません。<br />
+<br />
+<h3>PVを作成する</h3><br />
+<br />
+再起動したら次は各ディスクのLVMパーティションを使ってPVを作成します。まずは/dev/sda4から。<br />
+<br />
+<pre class="code">
+# pvcreate /dev/sda4
+  Physical volume "/dev/sda4" successfully created
+#
+</pre><br />
+<br />
+作成したPVの一覧を確認するにはpvdisplayコマンドを使います。<br />
+<br />
+<pre class="code">
+# pvdisplay
+"/dev/sda4" is a new physical volume of "1.77 TB"
+  --- NEW Physical volume ---
+  PV Name               /dev/sda4
+  VG Name
+  PV Size               1.77 TB
+  Allocatable           NO
+  PE Size (KByte)       0
+  Total PE              0
+  Free PE               0
+  Allocated PE          0
+  PV UUID               7zZFwx-ccj9-CONj-F1fi-YD2Q-hdBT-m0rU5p
+ 
+#					       
+</pre><br />
+<br />
+指定した/dev/sda4がPVとして登録されているのが確認できます。ほかのLVMパーティションに対しても同じようにPVを作成していきます。<br />
+<br />
+<pre class="code">
+# pvcreate /dev/sdb1
+  Physical volume "/dev/sdb1" successfully created
+# pvcreate /dev/sdc1
+  Physical volume "/dev/sdc1" successfully created
+# pvcreate /dev/sdd1
+  Physical volume "/dev/sdd1" successfully created
+# pvcreate /dev/sde1
+  Physical volume "/dev/sde1" successfully created
+# pvcreate /dev/sdf1
+  Physical volume "/dev/sdf1" successfully created
+# 
+</pre><br />
+  <br />
+<h3>VGを作成する</h3><br />
+<br />
+次に、VolGroup00というVGを作成してそのVGに/dev/sda4のPVを追加します。<br />
+<br />
+<pre class="code">
+# vgcreate VolGroup00 /dev/sda4
+  Volume group "VolGroup00" successfully created
+#
+</pre><br />
+<br />
+VGの情報はvgdisplayで確認することができます。<br />
+<br />
+<pre class="code">
+# vgdisplay
+  --- Volume group ---
+  VG Name               VolGroup00
+  System ID
+  Format                lvm2
+  Metadata Areas        1
+  Metadata Sequence No  1
+  VG Access             read/write
+  VG Status             resizable
+  MAX LV                0
+  Cur LV                0
+  Open LV               0
+  Max PV                0
+  Cur PV                1
+  Act PV                1
+  VG Size               1.77 TB
+  PE Size               32.00 MB
+  Total PE              464149
+  Alloc PE / Size       0 / 0
+  Free  PE / Size       464149 / 1.77 TB
+  VG UUID               tSSUzh-8aQQ-aZd7-SivA-dBiz-dQZp-tzgzvd
+ 
+#					  
+</pre><br />
+<br />
+<h3>VGを拡張する</h3><br />
+<br />
+さきほど作成したVGにほかのPVを追加して容量を増やしてみます。<br />
+<br />
+<pre class="code">
+# vgextend VolGroup00 /dev/sdb1
+  Volume group "VolGroup00" successfully extended
+# 
+</pre><br />
+<br />
+追加できたかどうかvgdisplayで確認します。(VG Sizeに注目)<br />
+<br />
+<pre class="code">
+# vgdisplay
+  --- Volume group ---
+  VG Name               VolGroup00
+  System ID
+  Format                lvm2
+  Metadata Areas        2
+  Metadata Sequence No  2
+  VG Access             read/write
+  VG Status             resizable
+  MAX LV                0
+  Cur LV                0
+  Open LV               0
+  Max PV                0
+  Cur PV                2
+  Act PV                2
+  VG Size               3.59 TB
+  PE Size               32.00 MB
+  Total PE              941080
+  Alloc PE / Size       0 / 0
+  Free  PE / Size       941080 / 3.59 TB
+  VG UUID               tSSUzh-8aQQ-aZd7-SivA-dBiz-dQZp-tzgzvd
+# 
+</pre><br />
+<br />
+無事、追加できたようです。同じ要領で残りのディスクも追加していきます。<br />
+<br />
+<pre class="code">
+# vgextend VolGroup00 /dev/sdc1
+  Volume group "VolGroup00" successfully extended
+# vgextend VolGroup00 /dev/sdd1
+  Volume group "VolGroup00" successfully extended
+# vgextend VolGroup00 /dev/sde1
+  Volume group "VolGroup00" successfully extended
+# vgextend VolGroup00 /dev/sdf1
+  Volume group "VolGroup00" successfully extended
+#
+</pre><br />
+<br />
+もう一度lvdisplayで状態を確認してみましょう。<br />
+<br />
+<pre class="code">
+# vgdisplay
+  --- Volume group ---
+  VG Name               VolGroup00
+  System ID
+  Format                lvm2
+  Metadata Areas        6
+  Metadata Sequence No  13
+  VG Access             read/write
+  VG Status             resizable
+  MAX LV                0
+  Cur LV                1
+  Open LV               1
+  Max PV                0
+  Cur PV                6
+  Act PV                6
+  VG Size               10.87 TB
+  PE Size               32.00 MB
+  Total PE              356098
+  Alloc PE / Size       354878 / 10.83 TB
+  Free  PE / Size       1220 / 38.12 GB
+  VG UUID               KctZmn-mBM5-ZfNn-LyBH-iT0B-E8fW-Yn2rp1
+#
+</pre><br />
+<br />
+これで10.87TBのVGができました。<br />
+<br />
+<h3>LVを作成する</h3><br />
+<br />
+VGが作成できたら、その作成したVG内に実際に扱うことのできる論理的なディスク領域、LVを作成します。<br />
+<br />
+<pre class="code">
+# lvcreate -L10.8T -n lvol0 VolGroup00 # VolGroup00内にlvol0という名前で容量が10.8TBのLVを作成する
+  Rounding up size to full physical extent 10.80 TB
+  Logical volume "lvol0" created
+#
+</pre><br />
+<br />
+作成できたかどうかはlvdisplayで確認します。<br />
+<br />
+<pre class="code">
+# lvdisplay
+  --- Logical volume ---
+  LV Name                /dev/VolGroup00/lvol0
+  VG Name                VolGroup00
+  LV UUID                YY3Mah-Yk2h-Sy06-9FVs-9bLx-vFp8-AyWheH
+  LV Write Access        read/write
+  LV Status              available
+  # open                 0
+  LV Size                10.80 TB
+  Current LE             353895
+  Segments               6
+  Allocation             inherit
+  Read ahead sectors     auto
+  - currently set to     256
+  Block device           253:0
+#			      
+</pre><br />
+<br />
+なお、初期のLVMではPE(物理エクステント)の最大数やカーネルの実装による制限で、LVの最大容量が(具体的な数字は忘れましたが、確か1TBか2TBぐらいに)制限されていましたが、<br />
+現在のLVM2はこの制限が大幅に緩和されています。(ただし、それでもファイルシステム等による制限は付きまといます)<br />
+<br />
+また↑の方法とこのマシン<b>だけ</b>だと冗長性が確保できないので、実際には何かしらの方法(例えばDRBD)で冗長化する必要があるのでしょう。<br />
+<br />
+<h3>仕上げ</h3><br />
+<br />
+あとはこのLVをmkfs系のコマンドでフォーマットすれば大容量マシンの出来上がりです。

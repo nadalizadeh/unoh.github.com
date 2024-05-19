@@ -1,0 +1,206 @@
+---
+layout: post
+permalink: /2009/01/ccelisp.html
+title: "C、C++で開発する際に便利そうなelispを書いてみました"
+date: 2009-01-05T10:57:20.00+09:00
+tags:
+  - "kubo"
+categories:
+  - "Emacs"
+---
+みなさん、Emacsしてますか？明けましておめでとうございます。C++でプログラミングし始めたはずなのにいつの間にかEmacsLispでプログラミングしていたことがあるbokkoです。<br />
+<br />
+今日は、タイトルにもある通り、C、C++で開発する際に便利そうな自作のelispを紹介します。また、単にC、C++のソースコードを読んだりするのにも役立つと思います。紹介するのは以下の2つです。同じようなことをするのが既にありそうな気がして最初は探したんですが、見つからなかったので自分で書きました。<br />
+<br />
+<br />
+追記：(2009-01-05 15:51)<br />
+<br />
+<a href="http://d.hatena.ne.jp/odz/">odzさん</a>から同じような関数(ff-find-other-file)が標準で既にあるという<a href="http://d.hatena.ne.jp/odz/20090105/1231162439">指摘</a>を頂きました。<br />
+<br />
+<ul><br />
+<li><a href="http://www.emacswiki.org/emacs-en/cOpenRelational">c-open-relational-file.el</a></li><br />
+<li><a href="http://www.emacswiki.org/emacs-en/FindHeaderFile">find-header-file.el</a></li><br />
+</ul><br />
+<br />
+上から順に解説していきます。<br />
+<br />
+<h2><a href="http://www.emacswiki.org/emacs-en/cOpenRelational">c-open-relational-file.el</a></h2><br />
+<br />
+C、C++ではソースファイルとそれに対応するヘッダファイルを書くことが多いです。なので、必然的にソースファイルを編集しながらヘッダファイルも同時に編集することが多くなります。しかし、手動でいちいち対応するファイルを探して開くのは面倒です。そこでこのelispの登場です。これを使うと、例えば、test.hというヘッダファイルを開いている際に同じディレクトリにあるtest.cに切り替えるといったことができます。これは前に書いた「<a href="http://unoh.github.com/2008/07/03/emacstips_1.html">続・Emacsを自分え拡張するためのTips</a>」でも紹介しましたが、拡張子の対応をちょっと真面目にやってみました(多分これで全部ですよね？)。また、実はバグがあって、ファイルへのパス中に拡張子の直前以外で「.」が含まれているとうまく動かないということに結構前に気付きまして、3ヶ月ぐらい前に直しました。<br />
+<br />
+<pre class="code">
+;; Author:Tatsuhiko Kubo
+;; This elisp can keeping in touch between header file and source file for C or C++
+ 
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation; either version 2, or (at your option)
+;; any later version.
+ 
+(defun c-open-relational-file-get-opened-file-name-prefix (file-name)
+  (string-match "/\\([^./]+\\)\\.[^.]+$" file-name)
+  (match-string 1 file-name))
+ 
+(defun c-open-relational-file-get-ext-type (file-name)
+  (string-match "\\.\\([^.]+\\)$" file-name)
+  (match-string 1 file-name))
+ 
+(defun c-open-relational-file-get-opening-file-name (file-name-prefix ext-list)
+  (let ((opening-file-name (concat file-name-prefix "." (car ext-list))))
+    (cond ((null (car ext-list))             nil)
+          ((file-exists-p opening-file-name) opening-file-name)
+          (t                                                  (c-open-relational-file-get-opening-file-name file-name-prefix 
+                                                                                                                                     (cdr ext-list))))))
+ 
+(defun c-open-relational-file (how-open-type)
+  "keeping in touch between header file and source file for C or C++"
+  (interactive "nOpen-Type 1:buffer,2:split; ")
+  (let* ((c-or-cpp-header-map (list "c" "cpp" "cxx" "cc" "c++" "C"))
+	 (c-source-map        (list "h" "s"))
+	 (asm-source-map      (list "c"))
+	 (cpp-source-map      (list "hpp" "h" "hxx" "h++" "hh" "H"))
+	 (cpp-header-map      (list "cpp" "cxx" "cc" "c++" "C"))
+	 (ext-map (list
+		   (cons "h"   c-or-cpp-header-map)
+		   (cons "c"   c-source-map)
+		   (cons "s"   asm-source-map)
+		   (cons "C"   cpp-source-map)
+		   (cons "cc"  cpp-source-map)
+		   (cons "cpp" cpp-source-map)
+		   (cons "cxx" cpp-source-map)
+		   (cons "c++" cpp-source-map)
+		   (cons "H"   cpp-header-map)
+		   (cons "hh"  cpp-header-map)
+		   (cons "hpp" cpp-header-map)
+		   (cons "hxx" cpp-header-map)
+		   (cons "h++" cpp-header-map)))
+	 (opened-file-name (buffer-file-name (window-buffer)))
+	 (opened-file-name-prefix (c-open-relational-file-get-opened-file-name-prefix opened-file-name))
+	 (opened-file-ext-type (c-open-relational-file-get-ext-type opened-file-name))
+	 (opening-file-ext-type-list (cdr (assoc opened-file-ext-type ext-map)))
+	 (opening-file-name (c-open-relational-file-get-opening-file-name opened-file-name-prefix
+                                                                                                               opening-file-ext-type-list))
+	 (opening-file-buffer (if (null opening-file-name)
+                                            nil
+                                          (find-file-noselect opening-file-name))))
+    (if (null opening-file-buffer)
+	(message "not found relational file")
+;;      (cond ((= how-open-type 1) (elscreen-switch-or-create opening-file-buffer)) 自分用
+      (cond ((= how-open-type 1) (switch-to-buffer opening-file-buffer))
+                ((= how-open-type 2) (progn (split-window-horizontally)
+                                                              (other-window 1)
+                                                              (switch-to-buffer opening-file-buffer)))
+               (t                                 (message "Illegal Type"))))))
+</pre><br />
+<br />
+使い方は、M-x c-open-relational-fileと実行するだけです。実行するとミニバッファに、「1」か「2」を入力するように表示されます。「1」を入力するとカレントバッファを対応するファイルのバッファに切り替え、「2」を入力すると、ウインドウを縦に分割して両方を表示するようにします。僕の環境では以下のようにキー割り当てを行っています(実際にはc-mode-hookやc++-mode-hookの中に記述しています)。<br />
+<br />
+<pre class="code">
+(define-key c-mode-map "\C-cr" 'c-open-relational-file)
+(define-key c++-mode-map "\C-cr" 'c-open-relational-file)
+</pre
+
+<h2><a href="http://www.emacswiki.org/emacs-en/FindHeaderFile">find-header-file.el</a></h2>
+
+同じくヘッダファイル絡みの話です。上記のelispで関連するヘッダファイルを簡単に開けるようにはなりましたが、test.cを開いているからといってインクルードされているのがtest.hだけとは限りませんし、あるヘッダファイルを覗いてみたら別のヘッダファイルへのinclude命令しかなかったということも日常茶飯事です。なので、gtagsでカーソル上のシンボルの定義にジャンプするかの如く、カーソル上のinclude命令を元にそのヘッダファイルへジャンプするのがこのelispの役割です。
+
+<pre class="code">
+;; Author:Tatsuhiko Kubo
+;; This elisp can open header file on current line.
+ 
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation; either version 2, or (at your option)
+;; any later version.
+ 
+(defvar find-header-file-header-file-prefixes (list "/usr/include/"
+                                                                            "/usr/local/include/"
+                                                                            ))
+ 
+(defun find-header-file-current-char ()
+  (char-to-string (char-after (point))))
+ 
+(defun find-header-file-current-line-string ()
+  (let ((line-string ""))
+    (save-excursion 
+      (while (not (bolp))
+	(backward-char))
+      (while (not (eolp))
+	(setq line-string (concat line-string (find-header-file-current-char)))
+	(forward-char)))
+    line-string))
+ 
+(defun find-header-file-buffer-on-path (prefix-list filename)
+  (if (null (car prefix-list))
+      nil
+    (if (file-exists-p (concat (car prefix-list) filename))
+	(find-file-noselect (concat (car prefix-list) filename))
+      (find-header-file-buffer-on-path (cdr prefix-list) filename))))
+ 
+(defun find-header-file ()
+  (interactive)
+  (let ((current-line-string (find-header-file-current-line-string))
+	(header-file-buffer nil))
+    (cond ((string-match "^\\s-*#\\s-*include\\s-*<\\s-*\\([^< ]+\\)\\s-*>" current-line-string)
+               (let ((header-file-path (match-string 1 current-line-string)))
+                 (setq header-file-buffer (find-header-file-buffer-on-path find-header-file-header-file-prefixes
+                                                                                                         header-file-path))))
+	  ((string-match "^\\s-*#\\s-*include\\s-*\"\\([^\"]+\\)\"\\s-*" current-line-string)
+	   (let* ((header-file-path (match-string 1 current-line-string))
+                    (buffer                 (if (file-exists-p (concat default-directory header-file-path))
+                                                    (find-file-noselect (concat default-directory header-file-path))
+                                                  nil)))
+             (setq header-file-buffer buffer)
+             (if (null header-file-buffer)
+                 (setq header-file-buffer (find-header-file-buffer-on-path find-header-file-header-file-prefixes
+                                                                                                        header-file-path))
+               nil)))
+          (t nil))
+    (if (null header-file-buffer)
+        (message "not found header file")
+;;      (elscreen-switch-or-create header-file-buffer)))) 自分用
+      (switch-to-buffer header-file-buffer))))
+</pre><br />
+<br />
+例えば、以下のようなinclude文のある行にカーソルを持って行き、<br />
+<br />
+<pre class="code">
+#include &lt;stdio.h&gt;
+</pre><br />
+<br />
+M-x find-header-fileと実行すると、/usr/include/、/usr/local/includeの順に該当するヘッダファイルを探します。ヘッダファイルがダブルクォートで囲まれている場合は単にカレントディレクトリから探します。ほかに探したい場所があれば、find-header-file-header-file-prefixesに追加するだけでOKです。また、僕の環境では以下のようにキー割り当てを行っています(実際にはc-mode-hookやc++-mode-hookの中に記述しています)。<br />
+<br />
+<pre class="code">
+(define-key c-mode-map "\C-ch" 'find-header-file)
+(define-key c++-mode-map "\C-ch" 'find-header-file)
+</pre><br />
+<br />
+余談ですが、include命令からヘッダファイルへのパスを抜き出す正規表現がややこしいのは<や>、#の間にスペースが入る可能性があるためなのと、EmacsLispの正規表現は文字列で表現されるために、エスケープがやたら多くなるためです。(スペースなんて入れないだろうとタカをくくっいたら、普通に標準ライブラリのヘッダファイルには入っていました)<br />
+<br />
+<h3>自分用</h3><br />
+<br />
+上記二つのelispにある「自分用」と書かれたコメントのある部分にある処理は僕が普段使っている<a href="http://www.morishima.net/~naoto/software/elscreen/">elscreen</a>と連携するためのもので、以下のようなelispから成っています。<br />
+<br />
+<pre class="code">
+(defun elscreen-create-new-buf-inner (buf)
+  (if (equal elscreen-default-buffer-name (buffer-name (window-buffer)))
+      (switch-to-buffer buf)
+    (elscreen-create)
+    (switch-to-buffer buf)))
+ 
+(defun elscreen-switch-to-create-inner (screen-list buf)
+  (cond ((null (elscreen-get-window-configuration (car screen-list)))
+         nil)
+        ((equal (car screen-list) (elscreen-find-screen-by-buffer (buffer-name buf)))
+         (elscreen-goto (car screen-list)))
+        (t
+         (elscreen-switch-to-create-inner (cdr screen-list) buf))))
+ 
+(defun elscreen-switch-or-create (buf)
+  "elscreen extension for switch-to-buffer"
+  (if (null (elscreen-switch-to-create-inner (elscreen-get-screen-list) buf))
+      (elscreen-create-new-buf-inner buf)
+    t))
+</pre><br />
+<br />
+elscreen-swigch-or-createは既存のswitch-to-bufferを置き換えるだけで、引数として渡されたバッファをelscreen上で開き直すことができるので、elscreenを使っている方で興味がある方はぜひ使ってみてください。

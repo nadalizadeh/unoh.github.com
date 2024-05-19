@@ -1,0 +1,75 @@
+---
+layout: post
+permalink: /2008/02/ruby_on_rails_mongrel_cluster.html
+title: "Ruby on Rails: mongrel_clusterのフロントエンドに nginxを使用する"
+date: 2008-02-06T21:39:56.00+09:00
+tags:
+  - "sato"
+categories:
+  - "Tips"
+---
+こんにちは satoです。<br />
+<br />
+nginx(えんじんえっくす)はロシアで開発されているwebサーバで、軽量、高速が売りのようです。もちろんvirtualhostやrewrite機能にも対応しています。今回はmongrel_clusterのフロントエンドに使ってみました。<br />
+<h3>mongrel_railsのインストールと環境構築</h3><br />
+mongrel_railsをインストールします<br />
+<pre class="code">gem istall mongrel_cluster --include-dependencies</pre><br />
+設定ファイルを作ります。RAIL_ROOTで<br />
+<pre class="code">mongrel_rails cluster::configure -e development -p 4000</pre><br />
+とすると RAILS_ROOT/conf/mongrel_cluster.yml ができます。<br />
+<pre class="code">--- 
+log_file: log/mongrel.log
+port: "4000"
+environment: development
+pid_file: tmp/pids/mongrel.pid
+servers: 2</pre><br />
+mongrel_clusterを起動します。<br />
+<pre class="code">mongrel_rails cluster::start</pre><br />
+<br />
+<br />
+<h3>nginxのインストールと環境構築</h3><br />
+nginxは URIのrewrite機能 等に  pcre を使うので、 pcre-develをインストールしておきます。<br />
+<pre class="code">yum install pcre-devel</pre><br />
+nginxをソースから入れます<br />
+<pre class="code">wget http://sysoev.ru/nginx/nginx-0.5.35.tar.gz
+./tar zxvf nginx-0.5.35.tar.gz
+./configure --with-md5=/usr/lib --with-sha1=/usr/lib
+make 
+sudo make install</pre><br />
+設定ファイルを編集します。<br />
+<pre class="code">vi /usr/local/nginx/conf/nginx.conf
+http {
+  upstream mongrel_cluster {
+    server localhost:4000;
+    server localhost:4001;
+  }
+  server {
+        root   html;
+        location / {
+            proxy_pass http://mongrel_cluster;
+        }
+  }
+}</pre><br />
+ 設定ファイルのフォーマット等テストをします。<br />
+<pre class="code">sudo /usr/local/nginx/sbin/nginx -t
+2008/02/06 20:47:55 [info] 4249#0: the configuration file /usr/local/nginx/conf/nginx.conf syntax is ok
+2008/02/06 20:47:55 [info] 4249#0: the configuration file /usr/local/nginx/conf/nginx.conf was tested successfully</pre><br />
+起動します<br />
+<pre class="code">sudo /usr/local/nginx/sbin/nginx</pre><br />
+設定ファイルを以下のようにすれば静的ファイルは nginxが出力したりと、LVSと比べて Layer7の部分でいろいろできるかもしれないです。<br />
+<pre class="code">  server {
+    root   html;
+    if (-f $request_filename) {
+      rewrite (.*)$1 break;
+    }
+    if (!-f $request_filename) {
+        proxy_pass http://mongrel_cluster;
+      break;
+    }
+  }</pre><br />
+<br />
+<br />
+-追記-<br />
+ごめんなさい　書いてから気がついたのですが<br />
+http://www.slideshare.net/zhesto/rails-deployment-with-nginx<br />
+とほとんど同じ内容でした。
