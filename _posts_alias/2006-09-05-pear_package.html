@@ -1,0 +1,127 @@
+---
+layout: post
+permalink: /2006/09/pear_package.html
+title: "PEAR package 作成と公開までの手順"
+date: 2006-09-05T00:44:44.00+09:00
+categories:
+  - "Tips"
+---
+こんにちは，ttsuruoka です．<br />
+<br />
+PEAR package の作成と公開までの手順について，<br />
+（たまにしかやらないことは忘れてもいいように）ここにメモしておきます．<br />
+<br />
+例として Services_Delicious のパッケージ作成・公開手順：<br />
+<br />
+<strong>0. テスト</strong><br />
+<br />
+まずはテストが正常に通る状態であることを確認．<br />
+Services_Delicious では .phpt 形式のテストを用意してあるので，これを実行します．<br />
+<br />
+<pre class="source_code">
+$ cd /path/to/tests  # テストのあるディレクトリに移動
+$ pear run-tests
+Running 3 tests
+PASS Services_Delicious:bug#8528[bug8528.phpt]
+PASS Services_Delicious:Req#7293[req7293.phpt]
+PASS Services_Delicious:Req#8044[req8044.phpt]
+TOTAL TIME: 00:07
+3 PASSED TESTS
+0 SKIPPED TESTS
+</pre><br />
+<br />
+テストを個別に実行したいときは，実行するテストを指定します：<br />
+<br />
+<pre class="source_code">
+$ pear run-tests bug8528.phpt
+</pre><br />
+<br />
+<strong><br />
+1. パッケージ定義ファイル（package.xml）の検証</strong><br />
+<br />
+<pre class="source_code">
+$ cd /path/to/package  # パッケージのあるディレクトリに移動
+$ pear pv
+Analyzing Delicious.php
+Validation: 0 error(s), 0 warning(s)
+</pre><br />
+<br />
+pear pv は pear package-validate の省略形です．このコマンドによって package.xml 中のタグの閉じ忘れなどの構文エラーをチェックできます．<br />
+<br />
+<br />
+<strong>2. Tarball を作成</strong><br />
+<br />
+<pre class="source_code">
+$ pear package
+</pre><br />
+<br />
+Services_Delicious-0.5.0.tgz が出来上がります．<br />
+<br />
+<br />
+<strong>3. パッケージに問題がないか検証</strong><br />
+<br />
+パッケージ情報の確認：<br />
+<br />
+<pre class="source_code">
+$ pear info Services_Delicious-0.5.0.tgz
+About Services_Delicious-0.5.0
+==============================
+Provides            Classes: Services_Delicious
+Package             Services_Delicious
+Summary             Client for the del.icio.us web service.
+（中略）
+Version             0.5.0
+Release Date        2006-09-05
+Release License     PHP License
+Release State       beta
+Release Notes       - Fixed bug #8528: Invalid response code
+Release Deps        Package PEAR ==
+                    Package HTTP_Request ==
+                    Package XML_Serializer >= 0.12.0
+                    ext openssl ==
+Package.xml Version 1.0
+Packaged With PEAR  1.4.9
+</pre><br />
+<br />
+Release Date, Release Notes をよく確認．<br />
+<br />
+インストールパスの確認：<br />
+<br />
+<pre class="source_code">
+$ pear list Services_Delicious-0.5.0.tgz 
+Contents of Services_Delicious-0.5.0.tgz
+========================================
+Package File            Install Path
+docs/api.txt            /usr/local/lib/php/doc/Services_Delicious/docs/api.txt
+examples/addPost.php    /usr/local/lib/php/doc/Services_Delicious/examples/addPost.php
+（中略）
+examples/renameTag.php  /usr/local/lib/php/doc/Services_Delicious/examples/renameTag.php
+Delicious.php           /usr/local/lib/php/Services/Delicious.php
+</pre><br />
+<br />
+pear install したときにどこにファイルが配置されるか分かります．<br />
+おかしいところがあれば package.xml を見直します．<br />
+<br />
+<br />
+<strong>4. ローカルにインストール</strong><br />
+<br />
+パッケージを公開する前にまずはローカル環境にインストールします．<br />
+<br />
+<pre class="source_code">
+# pear install -f Services_Delicious-0.5.0.tgz
+</pre><br />
+<br />
+古いパッケージを上書きしてインストールするため -f オプションをつけてあります．<br />
+インストール後に以下の項目を確認します：<br />
+- 正しいファイル名か<br />
+- 正しいディレクトリ構成か<br />
+- 正しい場所にインストールされているか<br />
+<br />
+<br />
+<strong>5. 公開</strong><br />
+<br />
+公式なパッケージの場合：<br />
+PEAR website からアップロード→パッケージのページ確認（http://pear.php.net/package/Services_Delicious）→ PEAR-general メーリングリスト確認 → pear install で確認<br />
+<br />
+非公式なパッケージの場合：<br />
+公開ディレクトリにパッケージファイルを置く→ pear install で確認

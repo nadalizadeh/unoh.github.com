@@ -1,0 +1,69 @@
+---
+layout: post
+permalink: /2006/09/visql.html
+title: "viの中でSQLを実行する"
+date: 2006-09-25T22:11:12.00+09:00
+---
+こんにちは，ttsuruoka です．<br />
+<br />
+vi の中で SQL を実行することができるプラグイン，<br />
+<a href="http://www.vim.org/scripts/script.php?script_id=356">dbext.vim</a>を紹介します．<br />
+<br />
+<strong>機能(一部)</strong><br />
+<br />
+- ex コマンドで SQL 文を入力して，その結果を取得<br />
+<pre class="source_code">
+ :Select user_id from users order by rand() limit 7
+</pre><br />
+Result バッファに結果が表示されます<br />
+<br />
+- 選択したテキスト部分のSQLを実行<br />
+<pre class="source_code">
+// プログラム中のSQL 
+$query = "SELECT * FROM users LIMIT 10";
+
+// 変数が含まれている場合
+$query = "SELECT * FROM users LIMIT $n";
+
+// プレースホルダーが含まれている場合
+$query = "SELECT * FROM users LIMIT ?"; 
+</pre><br />
+php 等のプログラムに書かれている SQL をビジュアルモード（CTRL-V）で選択して，<br />
+&lt;Leader&gt;se（バックスラッシュを押しながらse）を入力すると，選択範囲のSQLが実行されます．<br />
+変数やプレースホルダーが含まれている場合は，実行時に別の値に置き換えることができます．<br />
+<br />
+その他にテーブル，カラムの一覧取得やテーブル名等の入力補完が使えます．<br />
+<br />
+<br />
+<strong>インストールと設定</strong><br />
+vim7.0, Linux でのインストール方法：<br />
+<br />
+- dbext.vim の入手<br />
+<pre class="source_code">
+ $ wget http://www.vim.org/scripts/download_script.php?src_id=6221 -O dbext_400.zip
+ $ unzip dbext_400.zip
+ $ mv doc/dbext.txt ~/.vim/doc/
+ $ mv plugin/dbext.vim ~/.vim/plugin/
+</pre><br />
+<br />
+- ドキュメントの有効化<br />
+vi の ex コマンドで，<br />
+<pre class="source_code">
+ :helptags ~/.vim/doc
+</pre><br />
+<br />
+- データベースの設定<br />
+<pre class="source_code">
+ :DBPromptForBufferParameters
+</pre><br />
+これを実行すると接続するデータベースの設定を聞かれます．<br />
+データベースの種類，名前，ユーザー名，パスワードを入力すれば OK です．<br />
+<br />
+以上で vi の中から SQL を実行することができるようになります．<br />
+<br />
+<br />
+さらに詳しい情報は，<br />
+<pre class="source_code">
+ :h dbext.txt
+</pre><br />
+を参照してください．

@@ -1,0 +1,348 @@
+---
+layout: post
+permalink: /2009/04/lua.html
+title: "Luaを設定ファイルとして使う"
+date: 2009-04-30T19:13:22.00+09:00
+tags:
+  - "kubo"
+categories:
+  - "C、C++"
+---
+<br />
+テイルズオブヴェスペリアがPS3に移植されると聞いて、今年中にPS3を買うことを固く決意したbokkoです。部屋に置き場所がないとか、社会人になってから積みゲーがどんどん増えているとか、随分前にXBOX360版の総プレイ時間が三桁になっていることはこの際気にしないことにします。あと、機会があればCellと<a href="http://code.google.com/p/dtl-cpp/">dtl</a>を使って編集距離の計算をやってみたいです(多分あんまり速くない)。<br />
+<br />
+<h3>Lua</h3><br />
+<br />
+Luaは軽量で高速なインタプリタ言語です。コアは非常に小さいのですが、テーブルというデータ構造や関数がファーストオブジェクトであることを利用して、本来は機能としてないオブジェクト指向言語のような書き方をしたり、独自に拡張したりと、なかなかパワフルな言語です。実際の使われ方としてはアプリケーションに組み込んで使うことが多く、組み込み言語などと呼ばれることもあるようです。今回は、LuaのプログラムをC、C++で書かれたアプリケーションの設定ファイルとして使う方法を解説します。<br />
+<br />
+<h3>コンパイラ言語と設定ファイル</h3><br />
+<br />
+元々、Luaを設定ファイルとして使おうと思ったのは私が趣味で書いているC++のプログラムに設定ファイルが必要という理由からでした。最初は自分でファイルをテキトーに解析して、値を取得していく感じでいいかなと思ったのですが、やっぱり後々の保守性を考えるとちゃんとしたライブラリとか形式(XMLとかYAMLとかJSONとか)を使った方がいいと判断して手段を模索しました。インタプリタ言語ならそれで書かれたファイル自体を設定ファイルにしてしまっても特に問題ないのですが、C++のようなコンパイラ言語でconfig.hとかconfig.cとかを作ってそれを書き換える形式だと、設定を書き換える度にアプリケーションをコンパイルし直さなければなりません。そこで小さい言語処理系みたいなものを組み込んでそれ自体を設定ファイルとして扱ってみようと考えました。SWIGを使うことも考えましたが、*.iファイルなるものがたくさんできるのは(個人的に)なんだか嫌だったので、やめました。<br />
+<br />
+<h3>設定ファイルの保守性と拡張性</h3><br />
+<br />
+そして、できるだけ書きやすく、簡単に使えて、しかも簡単に拡張できそうだという理由でLuaを採用しました。どういうことかと言うと、例えば、アプリケーションのエンコーディングを設定ファイルに記述するとしましょう。<br />
+<br />
+<pre class="code">
+encoding="utf-8"
+</pre><br />
+<br />
+これなら、わざわざLuaを組み込んだりしなくてもささっとできそうです。しかし、後になってそのアプリケーションに何かしらのブラックリストみたいなものが必要になったとしましょう。<br />
+<br />
+<pre class="code">
+ignore_strs = {
+   ".svn",
+   ".git",
+   "CVS",
+   ".DS_Store",
+   ".gitignore",
+   "GTAGS",
+   "GRTAGS",
+   "GPATH",
+   "GSYMS",
+}
+</pre><br />
+<br />
+例えば、バージョン管理システムだと上記のように特定のファイルを操作対象から外すように設定ファイルを記述することかと思います。これでもそれほど難しくはないでしょう。しかし、さらにある時、以下のように何かしらの重み付けされた各エントリを保持するパラメータが欲しくなったとしましょう。<br />
+<br />
+<pre class="code">
+priority = {
+   server1 = 5,
+   server2 = 10,
+   server3 = 3,
+   server4 = 2,
+   server5 = 9,
+}
+</pre><br />
+<br />
+できないことはないけど、段々ややこしくなってきました。さらにさらに上記の各エントリが複数の値を保持したくなったとしましょう。<br />
+<br />
+<pre class="code">
+priority = {
+  server1 = {weight = 5,  sub = "server2"},
+  server2 = {weight = 10, sub = "server3"},
+  server3 = {weight = 3,  sub = "server4"},
+  server4 = {weight = 2,  sub = "server5"},
+  server5 = {weight = 9,  sub = "server1"},
+}
+</pre><br />
+<br />
+と、こんな風にどんどんデータ構造が複雑になり、段々アプリケーションとは直接関係ないこと、ネストは最大何回までにしようとか、テンプレートを使えるようにしようかとか、変数を使えるようにしようとか考えるようになっていくのです。そして最初のコードは単に1行毎に解析するだけ構造になっていたせいで、それを1回だけネストすることが可能なプログラムに書き直すことになり、そしてそして自分が決めた最大回数だけネストできるようにプログラムを拡張することになり、そしてそしてそしてある程度階層が深くなるとなんだかうまくいかなくなることがわかり、とりあえず動く間に合わせのコードを書き、しばらくして誰も拡張・保守できないようなコードが出来上がるのです。そうでなくても例えば過去のバージョンの互換性などのために、エレガントさを捨てて、愚直なことをしなければいけないというケースはたくさんあると思います。<br />
+<br />
+もちろん、設定ファイルを解析するプログラムを将来を見越して柔軟で拡張性の高いコードで記述するようにすればいいと考えるかも知れません。しかし、それは言うのは簡単ですが、実際にそれをやるのは非常に難しいと思います。というのも我々はいわゆるレキシテキケイイ(棒読み)という理由で、構文がありそうで実は全然構文がなく、また、一貫性がありそうで実は全くない設定ファイルを持つアプリケーションを何度も見ていて、しかもそれを普段からまるでそんなことは気にしないふりをして使っているのです。気にしないふりができるのはそのアプリケーションに関連するドキュメントや書籍がしっかり整備されているからなのです。<br />
+<br />
+そしてどうしようもなくなった後、運が良ければ最初からまともな構文を持った小さな言語処理系を実装するか、既にあるそのような処理系を組み込んで、それを設定ファイルして扱うようになる・・・かもしれません。というのもそのアプリケーションが既にどこかで動いていたりすると、過去のバージョンの設定ファイルのと互換性を考えたりしないといけなくなって、事実上不可能になる可能性があります。<br />
+<br />
+ちなみに、<br />
+<br />
+上記のコードは全てLuaでそのまま処理できます<br />
+上記のコードは全てLuaでそのまま処理できます<br />
+上記のコードは全てLuaでそのまま処理できます<br />
+<br />
+大事なことなので3回言いました。<br />
+<br />
+<h3>C言語からLuaの変数の値を取得する</h3><br />
+<br />
+前置きが長くなりました。それではC、C++からLuaのファイルを読み込んで、Luaの変数や関数をC、C++から使う例を紹介していきます。まず、以下のようにエンコーディングパラメータを記述したLuaのプログラムがあるとします。<br />
+<br />
+<h4>config.lua</h4><br />
+<pre class="code">
+encoding = "utf-8"
+</pre><br />
+<br />
+この値を取得して出力するC言語のプログラムは以下のようになります。(エラー処理は簡略化のため省いています)<br />
+<br />
+<h4>config.c</h4><br />
+<pre class="code">
+#include &lt;stdio.h&gt;
+#include &lt;lua.h&gt;
+#include &lt;lualib.h&gt;
+#include &lt;lauxlib.h&gt;
+int main (int argc, char *argv[]) {
+  lua_State* L = luaL_newstate();                   /*  Luaオブジェクトの生成 */
+  luaL_openlibs(L);                                         /*  標準ライブラリの読み込み */
+  luaL_dofile(L, "config.lua");                          /*  Luaファイルの評価 */
+  lua_getglobal(L, "encoding");                       
+  const char *encoding = lua_tostring(L, -1);   /*  変数の値を取得 */
+  lua_pop(L, 1);                                               /*  スタックから変数をポップする */
+  printf("encoding:%s\n", encoding);
+  lua_close(L);                                                 /*  Luaオブジェクトを解放 */
+  return 0;
+}
+</pre><br />
+<br />
+<h4>実行</h4><br />
+<br />
+<pre class="code">
+$ gcc config.c -I(ヘッダファイルへのパス) liblua.a
+$ ./a.out
+encoding:utf-8
+$
+</pre><br />
+<br />
+と、こんな風に非常に簡単にC言語と連携することができるのがLuaの特徴の一つです。<br />
+<br />
+<h3>C言語からLuaの関数を呼び出す</h3><br />
+<br />
+続いて、C言語からLuaの関数を呼び出す例を紹介します。以下のようにnの階乗を返す関数をLua側で定義します。<br />
+<br />
+<h4>fact.lua</h4><br />
+<pre class="code">
+function fact (n)
+   if n == 1 then
+      return 1
+   end
+   return n * fact(n - 1)
+end
+</pre><br />
+<br />
+上記のfact関数を呼び出すC言語のプログラムは以下のようになります。<br />
+<br />
+<h4>cfrom.lua</h4><br />
+<pre class="code">
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;lua.h&gt;
+#include &lt;lualib.h&gt;
+#include &lt;lauxlib.h&gt;
+int main (int argc, char *argv[]) {
+  if (argc < 2) {
+    fprintf(stderr, "few argument\n");
+    return -1;
+  }
+  int n = atoi(argv[1]);
+  lua_State* L = luaL_newstate();            /*  Luaオブジェクトの生成 */
+  luaL_openlibs(L);                                  /*  標準ライブラリの読み込み */
+  luaL_dofile(L, "fact.lua");                       /*  Luaファイルの評価 */
+  lua_getglobal(L, "fact");                         /*  fact関数を取得 */
+  lua_pushinteger(L, n);                           /*  fact関数の引数を設定 */
+  lua_pcall(L, 1, 1, 0);                               /*  fact関数を呼び出す */
+  int ret = lua_tointeger(L, -1);                  /*  fact関数の返り値を取得 */
+  lua_pop(L, 1);                                        /*  値をスタックから除去 */
+  printf("fact(%d) = %d\n", n, ret);
+  lua_close(L);                                          /*  Luaオブジェクトを解放 */
+  return 0;
+}
+</pre><br />
+<br />
+変数を取り出すのとさほど変わらないのがわかると思います。共通しているのはpushやpopという単語から分かるように、Lua側の変数や関数をC言語側から使用する際にLuaが用意しているスタックから値を取り出すということです。<br />
+<br />
+<h4>実行</h4><br />
+<br />
+<pre class="code">
+$ gcc cfromlua.c -I(ヘッダファイルへのパス)  liblua.a
+$ ./a.out 5
+fact(5) = 120
+$
+</pre><br />
+<br />
+<h3>設定ファイルの値のマッチング</h3><br />
+<br />
+最後に、コマンドラインから与えた引数が設定ファイルに記述された文字列や正規表現にマッチするか調べるプログラムを紹介します。実はLuaは単体で文字列だけでなく、正規表現も扱うことができます。<br />
+<br />
+<h4>ignores.lua</h4><br />
+<br />
+以下は無視する文字列および正規表現を記述した設定ファイルです。<br />
+<br />
+<pre class="code">
+-- 無視する文字列
+ignore_strs = {
+   ".svn",
+   ".hg",
+   ".git",
+   "CVS",
+   ".DS_Store",
+   ".gitignore",
+   ".hgignore",
+   "GTAGS",
+   "GRTAGS",
+   "GPATH",
+   "GSYMS",
+}
+-- 無視する正規表現のパターン
+ignore_patterns = {
+   "%.o$",
+   "%.a$",
+}
+</pre><br />
+<br />
+<h4>match.lua</h4><br />
+<br />
+これはマッチング処理を行うLuaプログラムです。<br />
+<br />
+<pre class="code">
+function str_match (str)
+   if (ignore_strs[str]) then
+      return true
+   end
+   return false
+end
+function reg_match (str)
+   for i, reg in pairs(ignore_patterns) do
+      if (string.match(str, reg))
+      then
+         return true
+      end
+   end
+   return false
+end
+</pre><br />
+<br />
+<h4>reverse.lua</h4><br />
+<br />
+そしてこれが元のignore.luaに書かれた設定を高速に解釈するためのちょっとしたプログラムになります。単に添字と値を逆にしたテーブルを返すだけです。<br />
+<br />
+<pre class="code">
+function reverse_arr (arr)
+   ret = {}
+   for i, val in pairs(arr) do
+      ret[val] = i
+   end
+   return ret
+end
+</pre><br />
+<br />
+<h4>match_test.cpp</h4><br />
+<br />
+それではこれらのLuaのプログラムと以下のC++のプログラムを使ってマッチングを行うプログラムを書いてみます。C++だとLuaのヘッダファイルはextern "C"で囲む必要があるので、注意しましょう。<br />
+<br />
+<pre class="code">
+#include &lt;iostream&gt;
+#include &lt;string&gt;
+extern "C" {
+#include &lt;lua.h&gt;
+#include &lt;lualib.h&gt;
+#include &lt;lauxlib.h&gt;
+}
+using namespace std;
+bool isIgnoreStr (const string str, lua_State *L);
+bool isIgnorePattern (const string str, lua_State *L);
+bool isIgnoreStr (const string str, lua_State *L) {
+  lua_getglobal(L, "str_match");
+  lua_pushstring(L, str.c_str());
+  lua_pcall(L, 1, 1, 0);
+  int b = lua_toboolean(L, -1);
+  lua_pop(L, 1);
+  if (b) {
+    return true;
+  }
+  return false;
+}
+bool isIgnorePattern (const string str, lua_State *L) {
+  lua_getglobal(L, "reg_match");
+  lua_pushstring(L, str.c_str());
+  lua_pcall(L, 1, 1, 0);
+  int b = lua_toboolean(L, -1);
+  lua_pop(L, 1);
+  if (b) {
+    return true;
+  }
+  return false;
+}
+int main (int argc, char *argv[]) {
+  if (argc < 2) {
+    cerr << "few argument" << endl;
+    return -1;
+  }
+  string str(argv[1]);
+  lua_State* L = luaL_newstate();
+  luaL_openlibs(L);
+  luaL_dofile(L, "ignores.lua");
+  luaL_dofile(L, "match.lua");
+  luaL_dofile(L, "reverse.lua");
+  luaL_dostring(L, "ignore_strs = reverse_arr(ignore_strs)");
+  bool is_ignore_str = false;
+  bool is_ignore_pattern = false;;
+  if (isIgnoreStr(str, L)) {
+    cout << str << " is ignore str." << endl;
+    is_ignore_str = true;
+  }
+  if (isIgnorePattern(str, L)) {
+    cout << str << " is ignore pattern." << endl;
+    is_ignore_str = true;
+  }
+  if (!is_ignore_str && !is_ignore_pattern) {
+    cout << str << " is not match." << endl;
+  }
+  lua_close(L);
+  return 0;
+}
+</pre><br />
+<br />
+<h4>実行</h4><br />
+<br />
+<pre class="code">
+$ g++ match_test.cpp -I(ヘッダファイルへのパス)  liblua.a
+$ ./a.out abc
+abc is not match.
+$ ./a.out GPATH
+GPATH is ignore str.
+$ ./a.out GPATHd
+GPATHd is not match.
+$ ./a.out liblua.o
+liblua.o is ignore pattern.
+$ ./a.out liblua.a
+liblua.a is ignore pattern.
+$ ./a.out liblua.ac
+liblua.ac is not match.
+$ 
+</pre><br />
+<br />
+<br />
+<h3>まとめ</h3><br />
+<br />
+LuaのプログラムをC、C++アプリケーションの設定ファイルとして扱うということをやってみました。上記のようにLuaの構造体に対してちょっとスタックを操作するプログラムを書くだけなので、直接設定ファイルを解析するプログラムを書く場合に比べてプログラムを大幅に簡略化することができます。もちろん、C、C++側からLuaのプログラムを呼び出すためのボトルネックというのは当然あるのですが、<a href="http://shootout.alioth.debian.org/u32q/benchmark.php?test=all&lang=lua&lang2=yarv&box=1">Lua自体が高速</a>なこともあり、これは多くの場合、無視できると思います。<br />
+<br />
+<br />
+<h3>参考文献・URL</h3><br />
+<br />
+<ul><br />
+<li><a href="http://www.amazon.co.jp/exec/obidos/ASIN/4797342722/unoh-22/ref=nosim/">入門Luaプログラミング</a></li><br />
+<li><a href="http://alpha.mixi.co.jp/blog/?p=236">Lua on Tyrant: DBサーバにLLを組み込む</a></li><br />
+<li><a href="http://www.hakkaku.net/articles/20081126-288">八角研究所 : Series: 高速スクリプト言語Luaを始めよう(5)</a></li><br />
+</ul><br />
+<br />
+<br />
+<h3>追記(2009/5/11)</h3><br />
+<br />
+gccでコンパイルする際に指定するファイルの順番が間違っていたので、修正しました。<br />

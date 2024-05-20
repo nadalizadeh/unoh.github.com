@@ -1,0 +1,110 @@
+---
+layout: post
+permalink: /2006/08/post_34.html
+title: "インデントをなるべく浅くするテクニック"
+date: 2006-08-17T20:20:34.00+09:00
+tags:
+  - "sato"
+categories:
+  - "Tips"
+---
+こんにちは satoです。<br />
+<br />
+インデントが浅いと、コードが見やすいです。<br />
+インデントが浅くなりそうなテクニックを紹介します。<br />
+時と場合にもよりますし、賛否両論もあると思いますが、寛大な目でみてやってください。<br />
+<br />
+1)処理の判定は正常じゃない場合を書く<br />
+<br />
+<pre class="source_code">
+ //before
+ $data = getdata();
+ if ($data) {
+  なんか複雑な処理;
+ } else {
+  return false;
+ }
+ //after
+ $data = getdata();
+ if (!$data) {
+  return false;
+ }
+ なんか複雑な処理;
+</pre><br />
+<br />
+2) array か どうかを判断する場合は array にして処理をする<br />
+<br />
+<pre class="source_code">
+ //before
+ if (is_array($args)) {
+  foreach() ...
+ } else {
+  ....
+ }
+ //after
+ if (!is_array($args)) {
+  $args = array($args);
+ }
+ foreach ...
+</pre><br />
+<br />
+3) 単純な代入が伴うif文には 三項演算子を使う<br />
+<br />
+<pre class="source_code">
+ //before
+ $data = getdata();
+ if (isset($data['id'])) {
+  return $data['id'];
+ }
+ return false;
+ //after
+ return isset($data['id']) ? $data['id'] : false;
+</pre><br />
+<br />
+4) forの中での特別処理は continue を使用する<br />
+<br />
+<pre class="source_code">
+ //before
+ foreach ($value as $v) {
+  if ($v % 2 == 0) {
+   複雑な処理;
+  }
+ }
+ //after
+ foreach ($value as $v) {
+  if ($v % 2 == 1)
+   continue;
+  複雑な処理;
+ }
+</pre><br />
+<br />
+5) 複数条件の if は switch で書く<br />
+<br />
+<pre class="source_code">
+ //before
+ if ($v == 'A' || $v == 'AB'  || $v = 'B') {
+  処理1;
+ }
+ else if ( $v == 'O') {
+  処理2;
+ } 
+ else {
+  処理3;
+ }
+ //after
+ switch($v) {
+ case 'A':
+ case 'AB':
+ case 'B':
+  処理1;
+  break;
+ case 'O'
+  処理2;
+  break;
+ default
+  処理3;
+  break;
+ } 
+</pre><br />
+<br />
+他にもナイスなアイディア募集中です！
